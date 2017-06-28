@@ -7,146 +7,20 @@ use 5.010001;
 use strict;
 use warnings;
 
-use Log::ger ();
-use Time::HiRes qw(time);
-
-our $caller_depth_offset = 3;
-
-our $time_start = time();
-our $time_now   = $time_start;
-our $time_last  = $time_start;
+use parent qw(Log::ger::Layout::LTSV);
 
 sub _encode {
+    my ($pkg, $msg) = @_;
+
     state $json = do {
         require JSON::MaybeXS;
         JSON::MaybeXS->new->canonical;
     };
-    $json->encode(shift);
-}
-
-sub _layouter {
-    my ($conf, $msg0, $init_args, $lnum, $level) = @_;
-
-    ($time_last, $time_now) = ($time_now, time());
-
-    my @pmd; # per-message data
-
-    my $msg;
-    if (ref $msg0 eq 'HASH') {
-        $msg = {%$msg0};
-    } else {
-        $msg = {message => $msg0};
-    }
-
-    if ($conf->{delete_fields}) {
-        for my $f (@{ $conf->{delete_fields} }) {
-            if (ref $f eq 'Regexp') {
-                for my $k (keys %$msg) {
-                    delete $msg->{$k} if $k =~ $f;
-                }
-            } else {
-                delete $msg->{$f};
-            }
-        }
-    }
-
-    if (my $ff = $conf->{add_fields}) {
-        for my $f (keys %$ff) {
-            $msg->{$f} = $ff->{$f};
-        }
-    }
-
-    if (my $ff = $conf->{add_special_fields}) {
-        for my $f (keys %$ff) {
-            my $sf = $ff->{$f};
-            my $val;
-            if ($sf eq 'Category') {
-                $val = $init_args->{category};
-            } elsif ($sf eq 'Class') {
-                $pmd[0] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset)];
-                $pmd[1] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset-1)];
-                $val = $pmd[0][0] // $pmd[1][0];
-            } elsif ($sf eq 'Date_Local') {
-                my @t = localtime($time_now);
-                $val = sprintf(
-                    "%04d-%02d-%02dT%02d:%02d:%02d",
-                    $t[5]+1900, $t[4]+1, $t[3],
-                    $t[2], $t[1], $t[0],
-                );
-            } elsif ($sf eq 'Date_GMT') {
-                my @t = gmtime($time_now);
-                $val = sprintf(
-                    "%04d-%02d-%02dT%02d:%02d:%02d",
-                    $t[5]+1900, $t[4]+1, $t[3],
-                    $t[2], $t[1], $t[0],
-                );
-            } elsif ($sf eq 'File') {
-                $pmd[0] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset)];
-                $pmd[1] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset-1)];
-                $val = $pmd[0][1] // $pmd[1][1];
-            } elsif ($sf eq 'Hostname') {
-                require Sys::Hostname;
-                $val = Sys::Hostname::hostname();
-            } elsif ($sf eq 'Location') {
-                $pmd[0] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset)];
-                $pmd[1] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset-1)];
-                $val = sprintf(
-                    "%s (%s:%d)",
-                    $pmd[0][3] // $pmd[1][3],
-                    $pmd[1][1],
-                    $pmd[1][2],
-                );
-            } elsif ($sf eq 'Line') {
-                $pmd[0] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset)];
-                $pmd[1] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset-1)];
-                $val = $pmd[1][2];
-            } elsif ($sf eq 'Message') {
-                $val = $msg0;
-            } elsif ($sf eq 'Method') {
-                $pmd[0] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset)];
-                $pmd[1] //= [caller($Log::ger::Caller_Depth_Offset+$caller_depth_offset-1)];
-                $val = $pmd[0][3] // $pmd[1][3];
-                $val =~ s/.+:://;
-            } elsif ($sf eq 'Level') {
-                $val = $level;
-            } elsif ($sf eq 'PID') {
-                $val = $$;
-            } elsif ($sf eq 'Elapsed_Start') {
-                $val = $time_now - $time_start;
-            } elsif ($sf eq 'Elapsed_Last') {
-                $val = $time_now - $time_last;
-            } elsif ($sf eq 'Stack_Trace') {
-                $pmd[2] //= do {
-                    my @st;
-                    my $i = $Log::ger::Caller_Depth_Offset+$caller_depth_offset-1;
-                    while (my @c = caller($i++)) {
-                        push @st, \@c;
-                    }
-                    \@st;
-                };
-                $val = [];
-                for my $frame (@{ $pmd[2] }) {
-                    push @$val, {file=>$frame->[1], line=>$frame->[2], method=>$frame->[3]};
-                }
-            } else { die "Unknown special field '$f'" }
-            $msg->{$f} = $val;
-        }
-    }
-    _encode($msg);
+    $json->encode($msg);
 }
 
 sub get_hooks {
-    my %conf = @_;
-
-    return {
-        create_layouter => [
-            __PACKAGE__, 50,
-            sub {
-                my %args = @_;
-
-                [sub { _layouter(\%conf, @_) }];
-            }],
-    };
+    __PACKAGE__->_get_hooks(@_);
 }
 
 1;
@@ -222,5 +96,7 @@ Unknown special fields will cause the layouter to die.
 L<Log::ger>
 
 L<Log::ger::Layout::Pattern>
+
+L<Log::ger::Layout::LTSV>
 
 =cut

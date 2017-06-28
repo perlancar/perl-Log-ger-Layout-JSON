@@ -96,7 +96,7 @@ subtest "conf:add_special fields" => sub {
     is($res->{Message}, 'warnmsg');
     is($res->{Method}, 'x');
     is($res->{PID}, $$);
-    is(ref $res->{Stack_Trace}, 'ARRAY'); # XXX test stack trace more
+    like($res->{Stack_Trace}, qr/\A\w+::/); # XXX test stack trace more
 
     # XXX test unknown special field -> die
 };
